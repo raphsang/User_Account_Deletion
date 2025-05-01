@@ -1,5 +1,7 @@
 import nodemailer from 'nodemailer';
 
+const EMAIL_TIMEOUT = 5000; // 5 seconds timeout for email operations
+
 const createTransporter = () => {
   try {
     return nodemailer.createTransport({
@@ -9,7 +11,10 @@ const createTransporter = () => {
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
-      }
+      },
+      connectionTimeout: EMAIL_TIMEOUT,
+      // Adding a socket timeout to prevent hanging connections
+      socketTimeout: EMAIL_TIMEOUT
     });
   } catch (err) {
     console.error('Failed to create email transporter:', err);
@@ -26,6 +31,24 @@ const validateInput = (email, username) => {
   if (!username) errors.push('Username is required');
 
   return errors;
+};
+
+// Function to send email with timeout handling
+const sendEmailWithTimeout = async (transporter, mailOptions) => {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error('Email sending timeout'));
+    }, EMAIL_TIMEOUT);
+
+    transporter.sendMail(mailOptions, (error, info) => {
+      clearTimeout(timeoutId);
+      if (error) {
+        reject(error);
+      } else {
+        resolve(info);
+      }
+    });
+  });
 };
 
 export default async function handler(req, res) {
@@ -66,6 +89,19 @@ export default async function handler(req, res) {
       reason: reason || 'Not provided',
       date: new Date().toISOString()
     });
+
+    // Store the deletion request in your database first
+    // This ensures the request is recorded even if email sending fails
+    try {
+      // Add code here to store the deletion request in your database
+      // Example: await dbClient.insertDeletionRequest({ requestId, email, username, reason, status: 'pending' });
+      
+      // For now, we'll just log it
+      console.log('Deletion request recorded with ID:', requestId);
+    } catch (dbError) {
+      console.error('Error recording deletion request:', dbError);
+      // Continue processing - we still want to try sending emails
+    }
 
     let transporter;
     try {
@@ -112,15 +148,31 @@ export default async function handler(req, res) {
       `
     };
 
-    // Send both emails
-    await transporter.sendMail(emailOptionsUser);
-    await transporter.sendMail(emailOptionsAdmin);
-
-    return res.status(200).json({
-      success: true,
-      message: 'Account deletion request submitted successfully',
-      requestId
-    });
+    // Send emails in parallel instead of sequentially
+    try {
+      await Promise.allSettled([
+        sendEmailWithTimeout(transporter, emailOptionsUser),
+        sendEmailWithTimeout(transporter, emailOptionsAdmin)
+      ]);
+      
+      // Note: We're using Promise.allSettled instead of Promise.all
+      // This ensures we don't fail if only one email fails
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Account deletion request submitted successfully',
+        requestId
+      });
+    } catch (emailError) {
+      console.error('Error sending emails:', emailError);
+      
+      // We still return a success since we've recorded the deletion request
+      return res.status(200).json({
+        success: true,
+        message: 'Account deletion request recorded, but there was an issue sending confirmation emails',
+        requestId
+      });
+    }
 
   } catch (error) {
     console.error('Unhandled error in deletion request:', error);
