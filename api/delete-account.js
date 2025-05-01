@@ -1,8 +1,5 @@
 import nodemailer from 'nodemailer';
 
-// Add timeout configuration
-const EMAIL_TIMEOUT = 5000; // 5 seconds timeout for email operations
-
 const createTransporter = () => {
   try {
     return nodemailer.createTransport({
@@ -12,26 +9,12 @@ const createTransporter = () => {
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASS
-      },
-      // Add timeout settings
-      connectionTimeout: EMAIL_TIMEOUT,
-      socketTimeout: EMAIL_TIMEOUT
+      }
     });
   } catch (err) {
     console.error('Failed to create email transporter:', err);
     throw new Error('Email configuration error');
   }
-};
-
-
-// Create a non-blocking email sender
-const sendEmailNonBlocking = (transporter, mailOptions) => {
-  // Return immediately, don't wait for email to send
-  setTimeout(() => {
-    transporter.sendMail(mailOptions)
-      .then(info => console.log('Email sent successfully:', info.messageId))
-      .catch(error => console.error('Failed to send email:', error));
-  }, 100);
 };
 
 const validateInput = (email, username) => {
@@ -129,19 +112,15 @@ export default async function handler(req, res) {
       `
     };
 
-    // IMPORTANT: Respond to the user first before attempting to send emails
-    // This prevents timeout errors from affecting the user experience
-    res.status(200).json({
+    // Send both emails
+    await transporter.sendMail(emailOptionsUser);
+    await transporter.sendMail(emailOptionsAdmin);
+
+    return res.status(200).json({
       success: true,
       message: 'Account deletion request submitted successfully',
       requestId
     });
-
-    // Then attempt to send emails non-blocking (after response is sent)
-    sendEmailNonBlocking(transporter, emailOptionsUser);
-    sendEmailNonBlocking(transporter, emailOptionsAdmin);
-
-    // Note: This point onwards is executed after the response has been sent to the client
 
   } catch (error) {
     console.error('Unhandled error in deletion request:', error);
