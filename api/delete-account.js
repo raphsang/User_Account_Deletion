@@ -23,6 +23,7 @@ const createTransporter = () => {
   }
 };
 
+
 // Create a non-blocking email sender
 const sendEmailNonBlocking = (transporter, mailOptions) => {
   // Return immediately, don't wait for email to send
