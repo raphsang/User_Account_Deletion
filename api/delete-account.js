@@ -17,6 +17,16 @@ const createTransporter = () => {
   }
 };
 
+const sendEmail = async (emailOptions) => {
+  const transporter = createTransporter();
+  try {
+    await transporter.sendMail(emailOptions);
+  } catch (err) {
+    console.error('Error sending email:', err);
+    // Log the error but continue the API execution
+  }
+};
+
 const validateInput = (email, username) => {
   const errors = [];
 
@@ -67,17 +77,7 @@ export default async function handler(req, res) {
       date: new Date().toISOString()
     });
 
-    let transporter;
-    try {
-      transporter = createTransporter();
-    } catch (emailError) {
-      console.error('Error setting up transporter:', emailError);
-      return res.status(500).json({
-        success: false,
-        message: 'Internal server error: Failed to initialize email service'
-      });
-    }
-
+    // Prepare the email options
     const emailOptionsUser = {
       from: process.env.EMAIL_FROM,
       to: email,
@@ -112,9 +112,9 @@ export default async function handler(req, res) {
       `
     };
 
-    // Send both emails
-    await transporter.sendMail(emailOptionsUser);
-    await transporter.sendMail(emailOptionsAdmin);
+    // Send both emails asynchronously (without waiting for them to complete)
+    sendEmail(emailOptionsUser);
+    sendEmail(emailOptionsAdmin);
 
     return res.status(200).json({
       success: true,
